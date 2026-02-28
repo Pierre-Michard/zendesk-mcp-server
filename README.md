@@ -7,30 +7,30 @@ A Model Context Protocol server for Zendesk.
 
 This server provides a comprehensive integration with Zendesk. It offers:
 
-- Tools for retrieving and managing Zendesk tickets and comments
+- Tools for retrieving and managing tickets, comments, views, users, fields, and webhooks
 - Specialized prompts for ticket analysis and response drafting
-- Full access to the Zendesk Help Center articles as knowledge base
+- Full access to the Zendesk Help Center articles as a knowledge base
 
 ![demo](https://res.cloudinary.com/leecy-me/image/upload/v1736410626/open/zendesk_yunczu.gif)
 
 ## Setup
 
-- build: `uv venv && uv pip install -e .` or `uv build` in short.
-- setup zendesk credentials in `.env` file, refer to [.env.example](.env.example).
-- configure in Claude desktop:
+- Build: `uv venv && uv pip install -e .` or `uv sync` in short.
+- Set up Zendesk credentials in a `.env` file, refer to [.env.example](.env.example).
+- Configure in Claude Desktop:
 
 ```json
 {
   "mcpServers": {
-      "zendesk": {
-          "command": "uv",
-          "args": [
-              "--directory",
-              "/path/to/zendesk-mcp-server",
-              "run",
-              "zendesk"
-          ]
-      }
+    "zendesk": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/zendesk-mcp-server",
+        "run",
+        "zendesk"
+      ]
+    }
   }
 }
 ```
@@ -52,13 +52,13 @@ You can containerize the server if you prefer an isolated runtime:
    docker run --rm --env-file /path/to/.env zendesk-mcp-server
    ```
 
-   Add `-i` when wiring the container to MCP clients over STDIN/STDOUT (Claude Code uses this mode). For daemonized runs, add `-d --name zendesk-mcp`.
+   Add `-i` when wiring the container to MCP clients over STDIN/STDOUT (Claude Code uses this mode).
 
 The image installs dependencies from `requirements.lock`, drops privileges to a non-root user, and expects configuration exclusively via environment variables.
 
 #### Claude MCP Integration
 
-To use the Dockerized server from Claude Code/Desktop, add an entry to Claude Code's `settings.json` similar to:
+To use the Dockerized server from Claude Code/Desktop, add an entry to `settings.json`:
 
 ```json
 {
@@ -80,83 +80,176 @@ To use the Dockerized server from Claude Code/Desktop, add an entry to Claude Co
 
 Adjust the paths to match your environment. After saving the file, restart Claude for the new MCP server to be detected.
 
+## Project Structure
+
+```
+src/zendesk_mcp_server/
+├── server.py              # MCP server wiring (prompts, resources, tool dispatch)
+├── client/
+│   ├── base.py            # Auth setup and shared HTTP helper
+│   ├── tickets.py         # Ticket API methods
+│   ├── views.py           # Views API methods
+│   ├── users.py           # Users API methods
+│   ├── fields.py          # Ticket/user/organization field methods
+│   ├── knowledge_base.py  # Help Center article methods
+│   └── webhooks.py        # Webhook API methods
+└── tools/
+    ├── tickets.py         # Ticket tool definitions and handlers
+    ├── views.py           # Views tool definitions and handlers
+    ├── users.py           # Users tool definitions and handlers
+    ├── fields.py          # Fields tool definitions and handlers
+    └── webhooks.py        # Webhook tool definitions and handlers
+```
+
+To add a new domain, create a mixin in `client/` and a module in `tools/`, then register both in their respective `__init__.py`.
+
 ## Resources
 
-- zendesk://knowledge-base, get access to the whole help center articles.
+### zendesk://knowledge-base
+
+Returns all Help Center sections and their articles.
 
 ## Prompts
 
 ### analyze-ticket
 
-Analyze a Zendesk ticket and provide a detailed analysis of the ticket.
+Fetches ticket info and comments, then provides a summary, timeline, and key interaction points.
+
+- Arguments: `ticket_id` (required)
 
 ### draft-ticket-response
 
-Draft a response to a Zendesk ticket.
+Fetches ticket info, comments, and knowledge base to draft a professional reply ready to post.
+
+- Arguments: `ticket_id` (required)
 
 ## Tools
 
-### get_tickets
+### Tickets
 
-Fetch the latest tickets with pagination support
+#### get_tickets
 
-- Input:
-  - `page` (integer, optional): Page number (defaults to 1)
-  - `per_page` (integer, optional): Number of tickets per page, max 100 (defaults to 25)
-  - `sort_by` (string, optional): Field to sort by - created_at, updated_at, priority, or status (defaults to created_at)
-  - `sort_order` (string, optional): Sort order - asc or desc (defaults to desc)
+Fetch tickets with pagination, optional view filter, and optional status filter.
 
-- Output: Returns a list of tickets with essential fields including id, subject, status, priority, description, timestamps, and assignee information, along with pagination metadata
+- `page` (integer, optional, default 1)
+- `per_page` (integer, optional, default 25, max 100)
+- `sort_by` (string, optional): `created_at`, `updated_at`, `priority`, `status`
+- `sort_order` (string, optional): `asc` or `desc`
+- `view_id` (integer, optional): filter by view
+- `status` (string, optional): `new`, `open`, `pending`, `hold`, `solved`, `closed`
 
-### get_ticket
+#### get_ticket
 
-Retrieve a Zendesk ticket by its ID
+Retrieve a single ticket by ID.
 
-- Input:
-  - `ticket_id` (integer): The ID of the ticket to retrieve
+- `ticket_id` (integer, required)
 
-### get_ticket_comments
+#### create_ticket
 
-Retrieve all comments for a Zendesk ticket by its ID
+Create a new ticket.
 
-- Input:
-  - `ticket_id` (integer): The ID of the ticket to get comments for
+- `subject` (string, required)
+- `description` (string, required)
+- `requester_id` (integer, optional)
+- `assignee_id` (integer, optional)
+- `priority` (string, optional): `low`, `normal`, `high`, `urgent`
+- `type` (string, optional): `problem`, `incident`, `question`, `task`
+- `tags` (array[string], optional)
+- `custom_fields` (array[object], optional)
 
-### create_ticket_comment
+#### update_ticket
 
-Create a new comment on an existing Zendesk ticket
+Update fields on an existing ticket.
 
-- Input:
-  - `ticket_id` (integer): The ID of the ticket to comment on
-  - `comment` (string): The comment text/content to add
-  - `public` (boolean, optional): Whether the comment should be public (defaults to true)
+- `ticket_id` (integer, required)
+- `subject` (string, optional)
+- `status` (string, optional): `new`, `open`, `pending`, `on-hold`, `solved`, `closed`
+- `priority` (string, optional): `low`, `normal`, `high`, `urgent`
+- `type` (string, optional)
+- `assignee_id` (integer, optional)
+- `requester_id` (integer, optional)
+- `tags` (array[string], optional)
+- `custom_fields` (array[object], optional)
+- `due_at` (string, optional): ISO8601 datetime
 
-### create_ticket
+#### update_tickets_batch
 
-Create a new Zendesk ticket
+Update multiple tickets in a single call.
 
-- Input:
-  - `subject` (string): Ticket subject
-  - `description` (string): Ticket description
-  - `requester_id` (integer, optional)
-  - `assignee_id` (integer, optional)
-  - `priority` (string, optional): one of `low`, `normal`, `high`, `urgent`
-  - `type` (string, optional): one of `problem`, `incident`, `question`, `task`
-  - `tags` (array[string], optional)
-  - `custom_fields` (array[object], optional)
+- `tickets` (array[object], required): each item must have `id` plus any updatable fields
 
-### update_ticket
+#### get_ticket_comments
 
-Update fields on an existing Zendesk ticket (e.g., status, priority, assignee)
+Retrieve all comments for a ticket.
 
-- Input:
-  - `ticket_id` (integer): The ID of the ticket to update
-  - `subject` (string, optional)
-  - `status` (string, optional): one of `new`, `open`, `pending`, `on-hold`, `solved`, `closed`
-  - `priority` (string, optional): one of `low`, `normal`, `high`, `urgent`
-  - `type` (string, optional)
-  - `assignee_id` (integer, optional)
-  - `requester_id` (integer, optional)
-  - `tags` (array[string], optional)
-  - `custom_fields` (array[object], optional)
-  - `due_at` (string, optional): ISO8601 datetime
+- `ticket_id` (integer, required)
+
+#### create_ticket_comment
+
+Add a comment to an existing ticket.
+
+- `ticket_id` (integer, required)
+- `comment` (string, required)
+- `public` (boolean, optional, default true)
+
+### Views
+
+#### list_views
+
+List all views with pagination.
+
+- `page` (integer, optional, default 1)
+- `per_page` (integer, optional, default 25, max 100)
+
+### Users
+
+#### list_users
+
+List users with optional role filter.
+
+- `role` (string, optional): `agent`, `admin`, `end-user`
+- `page` (integer, optional, default 1)
+- `per_page` (integer, optional, default 25, max 100)
+
+### Fields
+
+#### list_ticket_fields
+
+List all ticket fields (system and custom) with their options.
+
+#### list_user_fields
+
+List all custom user fields with their options.
+
+#### list_organization_fields
+
+List all custom organization fields with their options.
+
+### Webhooks
+
+#### list_webhooks
+
+List all webhooks with pagination.
+
+- `page` (integer, optional, default 1)
+- `per_page` (integer, optional, default 25, max 100)
+
+#### create_webhook
+
+Create a new webhook.
+
+- `name` (string, required)
+- `endpoint` (string, required): destination URL
+- `http_method` (string, required): `GET`, `POST`, `PUT`, `PATCH`, or `DELETE` — must be `POST` to subscribe to events
+- `request_format` (string, required): `json`, `xml`, or `form_encoded` — must be `json` to subscribe to events
+- `status` (string, required): `active` or `inactive`
+- `description` (string, optional)
+- `subscriptions` (array[string], optional): e.g. `["conditional_ticket_events"]`
+- `authentication` (object, optional)
+- `custom_headers` (object, optional)
+
+#### delete_webhook
+
+Delete a webhook by ID.
+
+- `webhook_id` (string, required)
