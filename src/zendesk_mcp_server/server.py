@@ -254,6 +254,36 @@ async def handle_list_tools() -> list[types.Tool]:
             }
         ),
         types.Tool(
+            name="update_tickets_batch",
+            description="Update multiple Zendesk tickets in a single API call. Efficient for bulk operations like closing multiple tickets or reassigning tickets.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "tickets": {
+                        "type": "array",
+                        "description": "Array of ticket objects to update. Each must have 'id' and fields to update.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "integer", "description": "The ticket ID (required)"},
+                                "subject": {"type": "string"},
+                                "status": {"type": "string", "description": "new, open, pending, on-hold, solved, closed"},
+                                "priority": {"type": "string", "description": "low, normal, high, urgent"},
+                                "type": {"type": "string"},
+                                "assignee_id": {"type": "integer"},
+                                "requester_id": {"type": "integer"},
+                                "tags": {"type": "array", "items": {"type": "string"}},
+                                "custom_fields": {"type": "array", "items": {"type": "object"}},
+                                "due_at": {"type": "string", "description": "ISO8601 datetime"}
+                            },
+                            "required": ["id"]
+                        }
+                    }
+                },
+                "required": ["tickets"]
+            }
+        ),
+        types.Tool(
             name="list_views",
             description="List all Zendesk views with pagination support",
             inputSchema={
@@ -322,6 +352,91 @@ async def handle_list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {},
                 "required": []
+            }
+        ),
+        types.Tool(
+            name="list_webhooks",
+            description="List all Zendesk webhooks with pagination",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number",
+                        "default": 1
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "description": "Number of webhooks per page (max 100)",
+                        "default": 25
+                    }
+                },
+                "required": []
+            }
+        ),
+        types.Tool(
+            name="delete_webhook",
+            description="Delete a Zendesk webhook by its ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "webhook_id": {
+                        "type": "string",
+                        "description": "The ID of the webhook to delete"
+                    }
+                },
+                "required": ["webhook_id"]
+            }
+        ),
+        types.Tool(
+            name="create_webhook",
+            description="Create a new Zendesk webhook that notifies a destination URL when events occur",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Webhook name"
+                    },
+                    "endpoint": {
+                        "type": "string",
+                        "description": "Destination URL that the webhook notifies when Zendesk events occur"
+                    },
+                    "http_method": {
+                        "type": "string",
+                        "description": "HTTP method used for the webhook request (GET, POST, PUT, PATCH, DELETE). Must be POST to subscribe to events.",
+                        "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+                    },
+                    "request_format": {
+                        "type": "string",
+                        "description": "Format of the outgoing request body (json, xml, form_encoded). Must be json to subscribe to Zendesk events.",
+                        "enum": ["json", "xml", "form_encoded"]
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Webhook status",
+                        "enum": ["active", "inactive"]
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional webhook description"
+                    },
+                    "subscriptions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of Zendesk event types to subscribe to (e.g. ['conditional_ticket_events'])"
+                    },
+                    "authentication": {
+                        "type": "object",
+                        "description": "Optional authentication credentials for the webhook requests"
+                    },
+                    "custom_headers": {
+                        "type": "object",
+                        "description": "Optional additional non-credential headers to include in webhook requests",
+                        "additionalProperties": {"type": "string"}
+                    }
+                },
+                "required": ["name", "endpoint", "http_method", "request_format", "status"]
             }
         )
     ]
@@ -419,6 +534,18 @@ async def handle_call_tool(
                 text=json.dumps({"message": "Ticket updated successfully", "ticket": updated}, indent=2)
             )]
 
+        elif name == "update_tickets_batch":
+            if not arguments:
+                raise ValueError("Missing arguments")
+            tickets = arguments.get("tickets")
+            if not tickets:
+                raise ValueError("tickets array is required")
+            result = zendesk_client.update_tickets_batch(tickets=tickets)
+            return [types.TextContent(
+                type="text",
+                text=json.dumps({"message": f"Batch update initiated for {result['tickets_count']} tickets", "result": result}, indent=2)
+            )]
+
         elif name == "list_views":
             page = arguments.get("page", 1) if arguments else 1
             per_page = arguments.get("per_page", 25) if arguments else 25
@@ -459,6 +586,43 @@ async def handle_call_tool(
             return [types.TextContent(
                 type="text",
                 text=json.dumps(fields, indent=2)
+            )]
+
+        elif name == "list_webhooks":
+            page = arguments.get("page", 1) if arguments else 1
+            per_page = arguments.get("per_page", 25) if arguments else 25
+            webhooks = zendesk_client.list_webhooks(page=page, per_page=per_page)
+            return [types.TextContent(
+                type="text",
+                text=json.dumps(webhooks, indent=2)
+            )]
+
+        elif name == "delete_webhook":
+            if not arguments:
+                raise ValueError("Missing arguments")
+            zendesk_client.delete_webhook(webhook_id=arguments["webhook_id"])
+            return [types.TextContent(
+                type="text",
+                text=json.dumps({"message": f"Webhook {arguments['webhook_id']} deleted successfully"}, indent=2)
+            )]
+
+        elif name == "create_webhook":
+            if not arguments:
+                raise ValueError("Missing arguments")
+            webhook = zendesk_client.create_webhook(
+                name=arguments["name"],
+                endpoint=arguments["endpoint"],
+                http_method=arguments["http_method"],
+                request_format=arguments["request_format"],
+                status=arguments["status"],
+                description=arguments.get("description"),
+                subscriptions=arguments.get("subscriptions"),
+                authentication=arguments.get("authentication"),
+                custom_headers=arguments.get("custom_headers"),
+            )
+            return [types.TextContent(
+                type="text",
+                text=json.dumps({"message": "Webhook created successfully", "webhook": webhook}, indent=2)
             )]
 
         else:

@@ -605,3 +605,205 @@ class ZendeskClient:
             }
         except Exception as e:
             raise Exception(f"Failed to update ticket {ticket_id}: {str(e)}")
+
+    def list_webhooks(self, page: int = 1, per_page: int = 25) -> Dict[str, Any]:
+        """
+        List all Zendesk webhooks with pagination.
+
+        Args:
+            page: Page number (1-based)
+            per_page: Number of webhooks per page (max 100)
+        """
+        try:
+            per_page = min(per_page, 100)
+            params = {"page[size]": str(per_page)}
+            query_string = urllib.parse.urlencode(params)
+            url = f"{self.base_url}/webhooks?{query_string}"
+
+            req = urllib.request.Request(url)
+            req.add_header("Authorization", self.auth_header)
+            req.add_header("Content-Type", "application/json")
+
+            with urllib.request.urlopen(req) as response:
+                data = json.loads(response.read().decode())
+
+            webhooks_data = data.get("webhooks", [])
+            webhook_list = []
+            for w in webhooks_data:
+                webhook_list.append({
+                    "id": w.get("id"),
+                    "name": w.get("name"),
+                    "endpoint": w.get("endpoint"),
+                    "http_method": w.get("http_method"),
+                    "request_format": w.get("request_format"),
+                    "status": w.get("status"),
+                    "description": w.get("description"),
+                    "subscriptions": w.get("subscriptions"),
+                    "created_at": w.get("created_at"),
+                    "updated_at": w.get("updated_at"),
+                })
+
+            meta = data.get("meta", {})
+            return {
+                "webhooks": webhook_list,
+                "count": len(webhook_list),
+                "has_more": meta.get("has_more", False),
+            }
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else "No response body"
+            raise Exception(f"Failed to list webhooks: HTTP {e.code} - {e.reason}. {error_body}")
+        except Exception as e:
+            raise Exception(f"Failed to list webhooks: {str(e)}")
+
+    def delete_webhook(self, webhook_id: str) -> None:
+        """
+        Delete a Zendesk webhook by its ID.
+
+        Args:
+            webhook_id: The ID of the webhook to delete
+        """
+        try:
+            url = f"{self.base_url}/webhooks/{webhook_id}"
+
+            req = urllib.request.Request(url, method="DELETE")
+            req.add_header("Authorization", self.auth_header)
+            req.add_header("Content-Type", "application/json")
+
+            with urllib.request.urlopen(req) as response:
+                # 204 No Content on success
+                return
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else "No response body"
+            raise Exception(f"Failed to delete webhook {webhook_id}: HTTP {e.code} - {e.reason}. {error_body}")
+        except Exception as e:
+            raise Exception(f"Failed to delete webhook {webhook_id}: {str(e)}")
+
+    def create_webhook(
+        self,
+        name: str,
+        endpoint: str,
+        http_method: str,
+        request_format: str,
+        status: str,
+        description: str | None = None,
+        subscriptions: List[str] | None = None,
+        authentication: Dict[str, Any] | None = None,
+        custom_headers: Dict[str, str] | None = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a new Zendesk webhook.
+
+        Args:
+            name: Webhook name
+            endpoint: Destination URL that the webhook notifies
+            http_method: HTTP method (GET, POST, PUT, PATCH, DELETE)
+            request_format: Format of the request body (json, xml, form_encoded)
+            status: Webhook status (active or inactive)
+            description: Optional webhook description
+            subscriptions: Optional list of event types to subscribe to
+            authentication: Optional authentication credentials object
+            custom_headers: Optional dict of additional non-credential headers
+        """
+        try:
+            url = f"{self.base_url}/webhooks"
+
+            webhook = {
+                "name": name,
+                "endpoint": endpoint,
+                "http_method": http_method,
+                "request_format": request_format,
+                "status": status,
+            }
+            if description is not None:
+                webhook["description"] = description
+            if subscriptions is not None:
+                webhook["subscriptions"] = subscriptions
+            if authentication is not None:
+                webhook["authentication"] = authentication
+            if custom_headers is not None:
+                webhook["custom_headers"] = custom_headers
+
+            payload = json.dumps({"webhook": webhook}).encode("utf-8")
+
+            req = urllib.request.Request(url, data=payload, method="POST")
+            req.add_header("Authorization", self.auth_header)
+            req.add_header("Content-Type", "application/json")
+
+            with urllib.request.urlopen(req) as response:
+                data = json.loads(response.read().decode())
+
+            w = data.get("webhook", {})
+            return {
+                "id": w.get("id"),
+                "name": w.get("name"),
+                "endpoint": w.get("endpoint"),
+                "http_method": w.get("http_method"),
+                "request_format": w.get("request_format"),
+                "status": w.get("status"),
+                "description": w.get("description"),
+                "subscriptions": w.get("subscriptions"),
+                "created_at": w.get("created_at"),
+                "created_by": w.get("created_by"),
+                "updated_at": w.get("updated_at"),
+            }
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else "No response body"
+            raise Exception(f"Failed to create webhook: HTTP {e.code} - {e.reason}. {error_body}")
+        except Exception as e:
+            raise Exception(f"Failed to create webhook: {str(e)}")
+
+    def update_tickets_batch(self, tickets: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Update multiple Zendesk tickets in a single API call.
+
+        Uses the Zendesk Bulk Update API to efficiently update many tickets at once.
+        Each ticket in the list must have an 'id' field and can include any other
+        updatable ticket fields.
+
+        Args:
+            tickets: List of ticket dicts, each containing 'id' and fields to update.
+                     Example: [
+                         {"id": 123, "status": "solved", "priority": "high"},
+                         {"id": 456, "status": "pending", "assignee_id": 789}
+                     ]
+
+        Returns:
+            Dict containing job_status information from Zendesk
+        """
+        if not tickets:
+            raise ValueError("tickets list cannot be empty")
+
+        for ticket in tickets:
+            if 'id' not in ticket:
+                raise ValueError("Each ticket must have an 'id' field")
+
+        try:
+            url = f"{self.base_url}/tickets/update_many.json"
+
+            payload = json.dumps({"tickets": tickets})
+
+            req = urllib.request.Request(url, data=payload.encode('utf-8'), method='PUT')
+            req.add_header('Authorization', self.auth_header)
+            req.add_header('Content-Type', 'application/json')
+
+            with urllib.request.urlopen(req) as response:
+                data = json.loads(response.read().decode())
+
+            job_status = data.get('job_status', {})
+
+            return {
+                'job_status': {
+                    'id': job_status.get('id'),
+                    'url': job_status.get('url'),
+                    'status': job_status.get('status'),
+                    'total': job_status.get('total'),
+                    'progress': job_status.get('progress'),
+                    'message': job_status.get('message'),
+                },
+                'tickets_count': len(tickets),
+            }
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode() if e.fp else "No response body"
+            raise Exception(f"Failed to batch update tickets: HTTP {e.code} - {e.reason}. {error_body}")
+        except Exception as e:
+            raise Exception(f"Failed to batch update tickets: {str(e)}")
