@@ -1,6 +1,5 @@
 import json
 import logging
-import uuid
 from contextvars import ContextVar
 from typing import Any, Dict
 
@@ -10,7 +9,7 @@ from mcp.server.sse import SseServerTransport
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 from starlette.routing import Route
 
 from zendesk_mcp_server.client import ZendeskClient
@@ -23,9 +22,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("zendesk-mcp-server")
 logger.info("zendesk mcp server started")
-
-# Session store: bearer token -> ZendeskClient
-_sessions: dict[str, ZendeskClient] = {}
 
 # Per-session client, set in the SSE handler and inherited by all tool call coroutines
 _current_client: ContextVar[ZendeskClient] = ContextVar("current_client")
@@ -158,41 +154,24 @@ async def handle_read_resource(uri: AnyUrl) -> str:
 sse_transport = SseServerTransport("/messages")
 
 
-async def auth_endpoint(request: Request) -> JSONResponse:
-    try:
-        body = await request.json()
-    except Exception:
-        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
-
-    subdomain = body.get("subdomain")
-    email = body.get("email")
-    api_key = body.get("api_key")
+async def sse_endpoint(request: Request) -> Response:
+    subdomain = request.headers.get("X-Zendesk-Subdomain")
+    email = request.headers.get("X-Zendesk-Email")
+    api_key = request.headers.get("X-Zendesk-Token")
 
     if not all([subdomain, email, api_key]):
-        return JSONResponse({"error": "subdomain, email, and api_key are required"}, status_code=400)
+        return Response(
+            "Unauthorized: X-Zendesk-Subdomain, X-Zendesk-Email, and X-Zendesk-Token headers are required",
+            status_code=401,
+        )
 
     try:
         client = ZendeskClient(subdomain=subdomain, email=email, token=api_key)
         client.test_connection()
     except Exception as e:
-        return JSONResponse({"error": f"Authentication failed: {str(e)}"}, status_code=401)
+        return Response(f"Unauthorized: {str(e)}", status_code=401)
 
-    token = str(uuid.uuid4())
-    _sessions[token] = client
-    logger.info(f"New session created for subdomain={subdomain} email={email}")
-    return JSONResponse({"token": token})
-
-
-async def sse_endpoint(request: Request) -> Response:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return Response("Unauthorized: missing Bearer token", status_code=401)
-
-    token = auth_header.removeprefix("Bearer ").strip()
-    client = _sessions.get(token)
-    if not client:
-        return Response("Unauthorized: invalid or expired token", status_code=401)
-
+    logger.info(f"New session established for subdomain={subdomain} email={email}")
     _current_client.set(client)
 
     async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
@@ -216,7 +195,6 @@ async def messages_endpoint(request: Request) -> Response:
 
 starlette_app = Starlette(
     routes=[
-        Route("/auth", endpoint=auth_endpoint, methods=["POST"]),
         Route("/sse", endpoint=sse_endpoint),
         Route("/messages", endpoint=messages_endpoint, methods=["POST"]),
     ]
