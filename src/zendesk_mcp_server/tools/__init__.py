@@ -1,6 +1,6 @@
-from zendesk_mcp_server.tools import fields, tickets, users, views, webhooks
+from zendesk_mcp_server.tools import fields, tickets, triggers, users, views, webhooks
 
-_DOMAIN_MODULES = [tickets, views, users, fields, webhooks]
+_DOMAIN_MODULES = [tickets, views, users, fields, webhooks, triggers]
 
 ALL_TOOLS = [tool for mod in _DOMAIN_MODULES for tool in mod.TOOLS]
 
