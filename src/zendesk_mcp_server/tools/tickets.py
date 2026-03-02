@@ -117,7 +117,15 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "ticket_id": {"type": "integer", "description": "The ID of the ticket to comment on"},
-                "comment": {"type": "string", "description": "The comment text/content to add"},
+                "comment": {
+                    "type": "string",
+                    "description": (
+                        "The comment content to add. Must be formatted as HTML. "
+                        "Use HTML tags for formatting: <br> for line breaks, <p> for paragraphs, "
+                        "<b> for bold, <i> for italic, <ul>/<li> for lists, etc. "
+                        "Example: 'Hello,<br>Thank you for reaching out.<br><br>Best regards'"
+                    ),
+                },
                 "public": {"type": "boolean", "description": "Whether the comment should be public", "default": True},
             },
             "required": ["ticket_id", "comment"],
