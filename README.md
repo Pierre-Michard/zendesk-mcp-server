@@ -15,33 +15,35 @@ This server provides a comprehensive integration with Zendesk. It offers:
 
 ## Authentication
 
-The server uses an HTTP/SSE transport with a token-based authentication layer. Zendesk credentials are **never stored in environment variables or config files** — they are supplied at runtime by each client.
+The server uses an HTTP/SSE transport. Zendesk credentials are passed directly as headers when opening the SSE connection — no pre-authentication step or environment variables required.
 
-### Auth flow
+### Required headers
 
-1. **Obtain a session token** by posting your Zendesk credentials:
+| Header | Description |
+|---|---|
+| `X-Zendesk-Subdomain` | Your Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`) |
+| `X-Zendesk-Email` | The email address of the Zendesk agent |
+| `X-Zendesk-Token` | The Zendesk API token |
 
-   ```bash
-   curl -X POST http://localhost:8000/auth \
-     -H "Content-Type: application/json" \
-     -d '{"subdomain": "your-subdomain", "email": "you@example.com", "api_key": "your-api-token"}'
-   # → {"token": "<uuid>"}
-   ```
+The server validates the credentials against Zendesk on every new SSE connection. Each session gets its own isolated `ZendeskClient`.
 
-2. **Connect your MCP client** to the SSE endpoint, passing the token as a Bearer header:
+### Claude / MCP client config
 
-   ```
-   GET http://localhost:8000/sse
-   Authorization: Bearer <token>
-   ```
-
-3. **Tool calls** are sent as normal MCP messages:
-
-   ```
-   POST http://localhost:8000/messages?session_id=<session-id>
-   ```
-
-Each session gets its own isolated `ZendeskClient`. Sessions are held in memory for the lifetime of the server process.
+```json
+{
+  "mcpServers": {
+    "zendesk": {
+      "type": "sse",
+      "url": "http://localhost:8000/sse",
+      "headers": {
+        "X-Zendesk-Subdomain": "your-subdomain",
+        "X-Zendesk-Email": "you@example.com",
+        "X-Zendesk-Token": "your-api-token"
+      }
+    }
+  }
+}
+```
 
 ## Setup
 
