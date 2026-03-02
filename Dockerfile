@@ -27,5 +27,7 @@ RUN pip install --no-cache-dir --no-deps .
 # Drop privileges for the runtime container
 USER appuser
 
-# Default command – expects Zendesk credentials via environment variables or an --env-file
+EXPOSE 8000
+
+# Credentials are supplied at runtime via POST /auth — no env vars needed
 CMD ["zendesk"]

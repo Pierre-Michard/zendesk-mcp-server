@@ -1,14 +1,17 @@
-import asyncio
 import json
 import logging
-import os
+import uuid
+from contextvars import ContextVar
 from typing import Any, Dict
 
-from cachetools.func import ttl_cache
-from dotenv import load_dotenv
+import uvicorn
 from mcp.server import InitializationOptions, NotificationOptions, Server, types
-from mcp.server.stdio import stdio_server
+from mcp.server.sse import SseServerTransport
 from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
 
 from zendesk_mcp_server.client import ZendeskClient
 from zendesk_mcp_server.tools import ALL_TOOLS, dispatch
@@ -21,14 +24,11 @@ logging.basicConfig(
 logger = logging.getLogger("zendesk-mcp-server")
 logger.info("zendesk mcp server started")
 
-load_dotenv()
-zendesk_client = ZendeskClient(
-    subdomain=os.getenv("ZENDESK_SUBDOMAIN"),
-    email=os.getenv("ZENDESK_EMAIL"),
-    token=os.getenv("ZENDESK_API_KEY"),
-)
+# Session store: bearer token -> ZendeskClient
+_sessions: dict[str, ZendeskClient] = {}
 
-server = Server("Zendesk Server")
+# Per-session client, set in the SSE handler and inherited by all tool call coroutines
+_current_client: ContextVar[ZendeskClient] = ContextVar("current_client")
 
 TICKET_ANALYSIS_TEMPLATE = """
 You are a helpful Zendesk support analyst. You've been asked to analyze ticket #{ticket_id}.
@@ -53,6 +53,8 @@ Please fetch the ticket info, comments and knowledge base to draft a professiona
 
 The response should be formatted well and ready to be posted as a comment.
 """
+
+server = Server("Zendesk Server")
 
 
 @server.list_prompts()
@@ -106,14 +108,16 @@ async def handle_list_tools() -> list[types.Tool]:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.TextContent]:
     try:
-        return dispatch(name, arguments, zendesk_client)
+        client = _current_client.get()
+        return dispatch(name, arguments, client)
+    except LookupError:
+        return [types.TextContent(type="text", text="Error: no authenticated session found")]
     except Exception as e:
         return [types.TextContent(type="text", text=f"Error: {str(e)}")]
 
 
 @server.list_resources()
 async def handle_list_resources() -> list[types.Resource]:
-    logger.debug("Handling list_resources request")
     return [
         types.Resource(
             uri=AnyUrl("zendesk://knowledge-base"),
@@ -124,21 +128,16 @@ async def handle_list_resources() -> list[types.Resource]:
     ]
 
 
-@ttl_cache(ttl=3600)
-def get_cached_kb():
-    return zendesk_client.get_all_articles()
-
-
 @server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str:
-    logger.debug(f"Handling read_resource request for URI: {uri}")
     if uri.scheme != "zendesk":
         raise ValueError(f"Unsupported URI scheme: {uri.scheme}")
     path = str(uri).replace("zendesk://", "")
     if path != "knowledge-base":
         raise ValueError(f"Unknown resource path: {path}")
     try:
-        kb_data = get_cached_kb()
+        client = _current_client.get()
+        kb_data = client.get_all_articles()
         return json.dumps(
             {
                 "knowledge_base": kb_data,
@@ -154,12 +153,53 @@ async def handle_read_resource(uri: AnyUrl) -> str:
         raise
 
 
-async def main():
-    async with stdio_server() as (read_stream, write_stream):
+# ── HTTP endpoints ────────────────────────────────────────────────────────────
+
+sse_transport = SseServerTransport("/messages")
+
+
+async def auth_endpoint(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    subdomain = body.get("subdomain")
+    email = body.get("email")
+    api_key = body.get("api_key")
+
+    if not all([subdomain, email, api_key]):
+        return JSONResponse({"error": "subdomain, email, and api_key are required"}, status_code=400)
+
+    try:
+        client = ZendeskClient(subdomain=subdomain, email=email, token=api_key)
+        client.test_connection()
+    except Exception as e:
+        return JSONResponse({"error": f"Authentication failed: {str(e)}"}, status_code=401)
+
+    token = str(uuid.uuid4())
+    _sessions[token] = client
+    logger.info(f"New session created for subdomain={subdomain} email={email}")
+    return JSONResponse({"token": token})
+
+
+async def sse_endpoint(request: Request) -> Response:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return Response("Unauthorized: missing Bearer token", status_code=401)
+
+    token = auth_header.removeprefix("Bearer ").strip()
+    client = _sessions.get(token)
+    if not client:
+        return Response("Unauthorized: invalid or expired token", status_code=401)
+
+    _current_client.set(client)
+
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
         await server.run(
-            read_stream=read_stream,
-            write_stream=write_stream,
-            initialization_options=InitializationOptions(
+            streams[0],
+            streams[1],
+            InitializationOptions(
                 server_name="Zendesk",
                 server_version="0.1.0",
                 capabilities=server.get_capabilities(
@@ -170,5 +210,18 @@ async def main():
         )
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+async def messages_endpoint(request: Request) -> Response:
+    await sse_transport.handle_post_message(request.scope, request.receive, request._send)
+
+
+starlette_app = Starlette(
+    routes=[
+        Route("/auth", endpoint=auth_endpoint, methods=["POST"]),
+        Route("/sse", endpoint=sse_endpoint),
+        Route("/messages", endpoint=messages_endpoint, methods=["POST"]),
+    ]
+)
+
+
+def main():
+    uvicorn.run(starlette_app, host="0.0.0.0", port=8000)

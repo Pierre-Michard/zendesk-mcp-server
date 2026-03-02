@@ -43,3 +43,7 @@ class ZendeskBaseClient:
         except urllib.error.HTTPError as e:
             error_body = e.read().decode() if e.fp else "No response body"
             raise Exception(f"HTTP {e.code} {e.reason} [{method} {path}]: {error_body}")
+
+    def test_connection(self) -> None:
+        """Validate credentials by making a lightweight API call. Raises on failure."""
+        self._request("users/me.json")
