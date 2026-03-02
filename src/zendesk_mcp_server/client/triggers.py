@@ -48,6 +48,39 @@ class TriggersMixin:
         except Exception as e:
             raise Exception(f"Failed to get trigger {trigger_id}: {str(e)}")
 
+    def create_trigger(
+        self,
+        title: str,
+        conditions: Dict[str, Any],
+        actions: List[Dict[str, Any]],
+        active: bool | None = None,
+        position: int | None = None,
+    ) -> Dict[str, Any]:
+        try:
+            trigger: Dict[str, Any] = {
+                "title": title,
+                "conditions": conditions,
+                "actions": actions,
+            }
+            if active is not None:
+                trigger["active"] = active
+            if position is not None:
+                trigger["position"] = position
+            data = self._request("triggers", method="POST", body={"trigger": trigger})
+            t = data.get("trigger", {})
+            return {
+                "id": t.get("id"),
+                "title": t.get("title"),
+                "active": t.get("active"),
+                "position": t.get("position"),
+                "conditions": t.get("conditions"),
+                "actions": t.get("actions"),
+                "created_at": t.get("created_at"),
+                "updated_at": t.get("updated_at"),
+            }
+        except Exception as e:
+            raise Exception(f"Failed to create trigger: {str(e)}")
+
     def test_trigger(self, trigger_id: int, ticket_id: int) -> Dict[str, Any]:
         """Check whether a trigger's conditions match a given ticket."""
         try:

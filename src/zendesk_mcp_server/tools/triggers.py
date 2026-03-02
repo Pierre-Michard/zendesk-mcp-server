@@ -29,6 +29,70 @@ TOOLS = [
         },
     ),
     types.Tool(
+        name="create_trigger",
+        description="Create a new Zendesk trigger with conditions and actions",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Title of the trigger"},
+                "conditions": {
+                    "type": "object",
+                    "description": (
+                        "Conditions that must be met for the trigger to fire. "
+                        "Use 'all' for AND logic and 'any' for OR logic. "
+                        "Each condition has 'field', 'operator', and 'value'. "
+                        "Example: {\"all\": [{\"field\": \"status\", \"operator\": \"is\", \"value\": \"new\"}]}"
+                    ),
+                    "properties": {
+                        "all": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "field": {"type": "string"},
+                                    "operator": {"type": "string"},
+                                    "value": {"type": "string"},
+                                },
+                                "required": ["field", "operator", "value"],
+                            },
+                        },
+                        "any": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "field": {"type": "string"},
+                                    "operator": {"type": "string"},
+                                    "value": {"type": "string"},
+                                },
+                                "required": ["field", "operator", "value"],
+                            },
+                        },
+                    },
+                },
+                "actions": {
+                    "type": "array",
+                    "description": (
+                        "Actions to perform when the trigger fires. "
+                        "Each action has a 'field' and 'value'. "
+                        "Example: [{\"field\": \"status\", \"value\": \"pending\"}]"
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "value": {},
+                        },
+                        "required": ["field", "value"],
+                    },
+                },
+                "active": {"type": "boolean", "description": "Whether the trigger is active (default true)"},
+                "position": {"type": "integer", "description": "Position of the trigger in the list (lower runs first)"},
+            },
+            "required": ["title", "conditions", "actions"],
+        },
+    ),
+    types.Tool(
         name="test_trigger",
         description=(
             "Test whether a trigger's conditions would match a given ticket. "
@@ -58,6 +122,18 @@ def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.Te
         if not arguments:
             raise ValueError("Missing arguments")
         return [types.TextContent(type="text", text=json.dumps(client.get_trigger(trigger_id=arguments["trigger_id"]), indent=2))]
+
+    if name == "create_trigger":
+        if not arguments:
+            raise ValueError("Missing arguments")
+        result = client.create_trigger(
+            title=arguments["title"],
+            conditions=arguments["conditions"],
+            actions=arguments["actions"],
+            active=arguments.get("active"),
+            position=arguments.get("position"),
+        )
+        return [types.TextContent(type="text", text=json.dumps({"message": "Trigger created successfully", "trigger": result}, indent=2))]
 
     if name == "test_trigger":
         if not arguments:
