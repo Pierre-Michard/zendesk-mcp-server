@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from mcp.server import types
+import mcp.types as types
 
 TOOLS = [
     types.Tool(
@@ -11,8 +11,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "active": {"type": "boolean", "description": "Filter by active (true) or inactive (false) triggers. Omit to return all."},
-                "page": {"type": "integer", "description": "Page number", "default": 1},
-                "per_page": {"type": "integer", "description": "Number of triggers per page (max 100)", "default": 25},
+                "page": {"type": ["integer", "string"], "description": "Page number", "default": 1},
+                "per_page": {"type": ["integer", "string"], "description": "Number of triggers per page (max 100)", "default": 25},
             },
             "required": [],
         },
@@ -23,7 +23,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "trigger_id": {"type": "integer", "description": "The ID of the trigger to retrieve"},
+                "trigger_id": {"type": ["integer", "string"], "description": "The ID of the trigger to retrieve"},
             },
             "required": ["trigger_id"],
         },
@@ -87,7 +87,7 @@ TOOLS = [
                     },
                 },
                 "active": {"type": "boolean", "description": "Whether the trigger is active (default true)"},
-                "position": {"type": "integer", "description": "Position of the trigger in the list (lower runs first)"},
+                "position": {"type": ["integer", "string"], "description": "Position of the trigger in the list (lower runs first)"},
             },
             "required": ["title", "conditions", "actions"],
         },
@@ -102,8 +102,8 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "trigger_id": {"type": "integer", "description": "The ID of the trigger to test"},
-                "ticket_id": {"type": "integer", "description": "The ID of the ticket to test against"},
+                "trigger_id": {"type": ["integer", "string"], "description": "The ID of the trigger to test"},
+                "ticket_id": {"type": ["integer", "string"], "description": "The ID of the ticket to test against"},
             },
             "required": ["trigger_id", "ticket_id"],
         },
@@ -114,14 +114,14 @@ TOOLS = [
 def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.TextContent] | None:
     if name == "list_triggers":
         active = arguments.get("active") if arguments else None
-        page = arguments.get("page", 1) if arguments else 1
-        per_page = arguments.get("per_page", 25) if arguments else 25
+        page = int(arguments.get("page", 1)) if arguments else 1
+        per_page = int(arguments.get("per_page", 25)) if arguments else 25
         return [types.TextContent(type="text", text=json.dumps(client.list_triggers(active=active, page=page, per_page=per_page), indent=2))]
 
     if name == "get_trigger":
         if not arguments:
             raise ValueError("Missing arguments")
-        return [types.TextContent(type="text", text=json.dumps(client.get_trigger(trigger_id=arguments["trigger_id"]), indent=2))]
+        return [types.TextContent(type="text", text=json.dumps(client.get_trigger(trigger_id=int(arguments["trigger_id"])), indent=2))]
 
     if name == "create_trigger":
         if not arguments:
@@ -131,14 +131,14 @@ def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.Te
             conditions=arguments["conditions"],
             actions=arguments["actions"],
             active=arguments.get("active"),
-            position=arguments.get("position"),
+            position=int(arguments["position"]) if arguments.get("position") is not None else None,
         )
         return [types.TextContent(type="text", text=json.dumps({"message": "Trigger created successfully", "trigger": result}, indent=2))]
 
     if name == "test_trigger":
         if not arguments:
             raise ValueError("Missing arguments")
-        result = client.test_trigger(trigger_id=arguments["trigger_id"], ticket_id=arguments["ticket_id"])
+        result = client.test_trigger(trigger_id=int(arguments["trigger_id"]), ticket_id=int(arguments["ticket_id"]))
         return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
     return None
