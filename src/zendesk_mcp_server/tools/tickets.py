@@ -111,6 +111,17 @@ TOOLS = [
         },
     ),
     types.Tool(
+        name="get_ticket_attachment",
+        description="Fetch a Zendesk ticket image attachment by its content_url and return it as base64-encoded data. Use attachment URLs returned by get_ticket_comments.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "content_url": {"type": "string", "description": "The content_url of the attachment from get_ticket_comments"},
+            },
+            "required": ["content_url"],
+        },
+    ),
+    types.Tool(
         name="create_ticket_comment",
         description="Create a new comment on an existing Zendesk ticket",
         inputSchema={
@@ -199,5 +210,14 @@ def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.Te
             public=str(arguments.get("public", True)).lower() != "false",
         )
         return [types.TextContent(type="text", text=f"Comment created successfully: {result}")]
+
+    if name == "get_ticket_attachment":
+        if not arguments:
+            raise ValueError("Missing arguments")
+        result = client.get_ticket_attachment(arguments["content_url"])
+        content_type = result["content_type"]
+        if content_type.startswith("image/"):
+            return [types.ImageContent(type="image", data=result["data"], mimeType=content_type)]
+        return [types.TextContent(type="text", text=json.dumps({"content_type": content_type, "data_base64": result["data"]}))]
 
     return None
