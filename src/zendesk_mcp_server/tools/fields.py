@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from mcp.server import types
+import mcp.types as types
 
 _FIELD_TYPE_ENUM = ["text", "textarea", "checkbox", "date", "integer", "decimal", "regexp", "tagger", "lookup"]
 
@@ -47,7 +47,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "field_id": {"type": "integer", "description": "ID of the ticket field to update"},
+                "field_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "ID of the ticket field to update"},
                 "title": {"type": "string", "description": "New display title"},
                 "description": {"type": "string", "description": "New description"},
                 "required": {"type": "boolean", "description": "Whether the field is required"},
@@ -85,7 +85,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "field_id": {"type": "integer", "description": "ID of the user field to update"},
+                "field_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "ID of the user field to update"},
                 "title": {"type": "string", "description": "New display title"},
                 "description": {"type": "string", "description": "New description"},
                 "active": {"type": "boolean", "description": "Whether the field is active"},
@@ -122,7 +122,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "field_id": {"type": "integer", "description": "ID of the organization field to update"},
+                "field_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "ID of the organization field to update"},
                 "title": {"type": "string", "description": "New display title"},
                 "description": {"type": "string", "description": "New description"},
                 "active": {"type": "boolean", "description": "Whether the field is active"},
@@ -153,7 +153,7 @@ def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.Te
 
     if name == "update_ticket_field":
         result = client.update_ticket_field(
-            field_id=args["field_id"],
+            field_id=int(args["field_id"]),
             title=args.get("title"),
             description=args.get("description"),
             required=args.get("required"),
@@ -178,7 +178,7 @@ def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.Te
 
     if name == "update_user_field":
         result = client.update_user_field(
-            field_id=args["field_id"],
+            field_id=int(args["field_id"]),
             title=args.get("title"),
             description=args.get("description"),
             active=args.get("active"),
@@ -202,7 +202,7 @@ def handle(name: str, arguments: dict[str, Any] | None, client) -> list[types.Te
 
     if name == "update_organization_field":
         result = client.update_organization_field(
-            field_id=args["field_id"],
+            field_id=int(args["field_id"]),
             title=args.get("title"),
             description=args.get("description"),
             active=args.get("active"),

@@ -1,10 +1,20 @@
+import base64
 from typing import Any, Dict, List
 
+import requests as _requests
 from zenpy.lib.api_objects import Comment
 from zenpy.lib.api_objects import Ticket as ZenpyTicket
 
 
 class TicketsMixin:
+    _ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+    _MAGIC_BYTES: Dict[str, List[bytes]] = {
+        'image/jpeg': [b'\xff\xd8\xff'],
+        'image/png':  [b'\x89PNG\r\n\x1a\n'],
+        'image/gif':  [b'GIF87a', b'GIF89a'],
+        'image/webp': [b'RIFF'],
+    }
+    _MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
     def get_ticket(self, ticket_id: int) -> Dict[str, Any]:
         try:
             ticket = self.client.tickets(id=ticket_id)
@@ -26,19 +36,77 @@ class TicketsMixin:
     def get_ticket_comments(self, ticket_id: int) -> List[Dict[str, Any]]:
         try:
             comments = self.client.tickets.comments(ticket=ticket_id)
-            return [
-                {
+            result = []
+            for comment in comments:
+                attachments = [
+                    {
+                        "id": a.id,
+                        "file_name": a.file_name,
+                        "content_url": a.content_url,
+                        "content_type": a.content_type,
+                        "size": a.size,
+                    }
+                    for a in (getattr(comment, "attachments", []) or [])
+                ]
+                result.append({
                     "id": comment.id,
                     "author_id": comment.author_id,
                     "body": comment.body,
                     "html_body": comment.html_body,
                     "public": comment.public,
                     "created_at": str(comment.created_at),
-                }
-                for comment in comments
-            ]
+                    "attachments": attachments,
+                })
+            return result
         except Exception as e:
             raise Exception(f"Failed to get comments for ticket {ticket_id}: {str(e)}")
+
+    def get_ticket_attachment(self, content_url: str) -> Dict[str, Any]:
+        """Fetch an image attachment and return base64-encoded data.
+
+        Security: allowlisted MIME types, magic-byte validation, 10 MB cap.
+        """
+        try:
+            response = _requests.get(
+                content_url,
+                headers={"Authorization": self.auth_header},
+                stream=True,
+                timeout=30,
+                allow_redirects=True,
+            )
+            response.raise_for_status()
+
+            content_type = response.headers.get("Content-Type", "").split(";")[0].strip().lower()
+            if content_type not in self._ALLOWED_IMAGE_TYPES:
+                raise ValueError(
+                    f"Attachment type '{content_type}' is not allowed. "
+                    f"Supported types: {sorted(self._ALLOWED_IMAGE_TYPES)}"
+                )
+
+            chunks, total = [], 0
+            for chunk in response.iter_content(chunk_size=65536):
+                total += len(chunk)
+                if total > self._MAX_ATTACHMENT_BYTES:
+                    raise ValueError(
+                        f"Attachment exceeds the {self._MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB size limit."
+                    )
+                chunks.append(chunk)
+            content = b"".join(chunks)
+
+            magic_signatures = self._MAGIC_BYTES.get(content_type, [])
+            if magic_signatures and not any(content.startswith(sig) for sig in magic_signatures):
+                raise ValueError(
+                    f"File header does not match declared content type '{content_type}'. "
+                    "The attachment may be spoofed."
+                )
+            if content_type == "image/webp" and content[8:12] != b"WEBP":
+                raise ValueError("File header does not match declared content type 'image/webp'.")
+
+            return {"data": base64.b64encode(content).decode("ascii"), "content_type": content_type}
+        except (ValueError, _requests.HTTPError):
+            raise
+        except Exception as e:
+            raise Exception(f"Failed to fetch attachment: {str(e)}")
 
     def post_comment(self, ticket_id: int, comment: str, public: bool = True) -> str:
         try:
