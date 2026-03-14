@@ -10,7 +10,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "ticket_id": {"oneOf": [{"type": ["integer", "string"]}, {"type": "string"}], "description": "The ID of the ticket to retrieve"}
+                "ticket_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the ticket to retrieve"}
             },
             "required": ["ticket_id"],
         },
@@ -21,11 +21,11 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "page": {"type": ["integer", "string"], "description": "Page number", "default": 1},
-                "per_page": {"type": ["integer", "string"], "description": "Number of tickets per page (max 100)", "default": 25},
+                "page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Page number", "default": 1},
+                "per_page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Number of tickets per page (max 100)", "default": 25},
                 "sort_by": {"type": "string", "description": "Field to sort by (created_at, updated_at, priority, status)", "default": "created_at"},
                 "sort_order": {"type": "string", "description": "Sort order (asc or desc)", "default": "desc"},
-                "view_id": {"type": ["integer", "string"], "description": "Optional view ID to filter tickets by a specific view"},
+                "view_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Optional view ID to filter tickets by a specific view"},
                 "status": {"type": "string", "description": "Optional status filter (new, open, pending, hold, solved, closed)"},
             },
             "required": [],
@@ -39,8 +39,8 @@ TOOLS = [
             "properties": {
                 "subject": {"type": "string", "description": "Ticket subject"},
                 "description": {"type": "string", "description": "Ticket description"},
-                "requester_id": {"type": ["integer", "string"]},
-                "assignee_id": {"type": ["integer", "string"]},
+                "requester_id": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+                "assignee_id": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
                 "priority": {"type": "string", "description": "low, normal, high, urgent"},
                 "type": {"type": "string", "description": "problem, incident, question, task"},
                 "tags": {"type": "array", "items": {"type": "string"}},
@@ -55,13 +55,13 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "ticket_id": {"oneOf": [{"type": ["integer", "string"]}, {"type": "string"}], "description": "The ID of the ticket to update"},
+                "ticket_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the ticket to update"},
                 "subject": {"type": "string"},
                 "status": {"type": "string", "description": "new, open, pending, on-hold, solved, closed"},
                 "priority": {"type": "string", "description": "low, normal, high, urgent"},
                 "type": {"type": "string"},
-                "assignee_id": {"type": ["integer", "string"]},
-                "requester_id": {"type": ["integer", "string"]},
+                "assignee_id": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+                "requester_id": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "custom_fields": {"type": "array", "items": {"type": "object"}},
                 "due_at": {"type": "string", "description": "ISO8601 datetime"},
@@ -81,13 +81,13 @@ TOOLS = [
                     "items": {
                         "type": "object",
                         "properties": {
-                            "id": {"type": ["integer", "string"], "description": "The ticket ID (required)"},
+                            "id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ticket ID (required)"},
                             "subject": {"type": "string"},
                             "status": {"type": "string", "description": "new, open, pending, on-hold, solved, closed"},
                             "priority": {"type": "string", "description": "low, normal, high, urgent"},
                             "type": {"type": "string"},
-                            "assignee_id": {"type": ["integer", "string"]},
-                            "requester_id": {"type": ["integer", "string"]},
+                            "assignee_id": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+                            "requester_id": {"anyOf": [{"type": "integer"}, {"type": "string"}]},
                             "tags": {"type": "array", "items": {"type": "string"}},
                             "custom_fields": {"type": "array", "items": {"type": "object"}},
                             "due_at": {"type": "string", "description": "ISO8601 datetime"},
@@ -105,7 +105,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "ticket_id": {"oneOf": [{"type": ["integer", "string"]}, {"type": "string"}], "description": "The ID of the ticket to get comments for"}
+                "ticket_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the ticket to get comments for"}
             },
             "required": ["ticket_id"],
         },
@@ -127,7 +127,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "ticket_id": {"oneOf": [{"type": ["integer", "string"]}, {"type": "string"}], "description": "The ID of the ticket to comment on"},
+                "ticket_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the ticket to comment on"},
                 "comment": {
                     "type": "string",
                     "description": (
@@ -137,7 +137,7 @@ TOOLS = [
                         "Example: 'Hello,<br>Thank you for reaching out.<br><br>Best regards'"
                     ),
                 },
-                "public": {"oneOf": [{"type": "boolean"}, {"type": "string"}], "description": "Whether the comment should be public", "default": True},
+                "public": {"anyOf": [{"type": "boolean"}, {"type": "string"}], "description": "Whether the comment should be public", "default": True},
             },
             "required": ["ticket_id", "comment"],
         },

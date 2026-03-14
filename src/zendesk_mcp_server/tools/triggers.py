@@ -11,8 +11,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "active": {"type": "boolean", "description": "Filter by active (true) or inactive (false) triggers. Omit to return all."},
-                "page": {"type": ["integer", "string"], "description": "Page number", "default": 1},
-                "per_page": {"type": ["integer", "string"], "description": "Number of triggers per page (max 100)", "default": 25},
+                "page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Page number", "default": 1},
+                "per_page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Number of triggers per page (max 100)", "default": 25},
             },
             "required": [],
         },
@@ -23,7 +23,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "trigger_id": {"type": ["integer", "string"], "description": "The ID of the trigger to retrieve"},
+                "trigger_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the trigger to retrieve"},
             },
             "required": ["trigger_id"],
         },
@@ -87,7 +87,7 @@ TOOLS = [
                     },
                 },
                 "active": {"type": "boolean", "description": "Whether the trigger is active (default true)"},
-                "position": {"type": ["integer", "string"], "description": "Position of the trigger in the list (lower runs first)"},
+                "position": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Position of the trigger in the list (lower runs first)"},
             },
             "required": ["title", "conditions", "actions"],
         },
@@ -102,8 +102,8 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "trigger_id": {"type": ["integer", "string"], "description": "The ID of the trigger to test"},
-                "ticket_id": {"type": ["integer", "string"], "description": "The ID of the ticket to test against"},
+                "trigger_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the trigger to test"},
+                "ticket_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "The ID of the ticket to test against"},
             },
             "required": ["trigger_id", "ticket_id"],
         },

@@ -1,22 +1,25 @@
 import base64
+import contextlib
 import hashlib
 import json
 import logging
 import secrets
 import time
+from collections.abc import AsyncIterator
 from contextvars import ContextVar
 from typing import Any, Dict
 from urllib.parse import urlencode
 
 import uvicorn
 import mcp.types as types
-from mcp.server import InitializationOptions, NotificationOptions, Server
-from mcp.server.sse import SseServerTransport
+from mcp.server import NotificationOptions, Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette.types import Receive, Scope, Send
 
 from zendesk_mcp_server.client import ZendeskClient
 from zendesk_mcp_server.tools import ALL_TOOLS, dispatch
@@ -365,56 +368,43 @@ async def auth_endpoint(request: Request) -> Response:
     return Response(json.dumps({"token": token}), media_type="application/json")
 
 
-# ── SSE transport ─────────────────────────────────────────────────────────────
+# ── Streamable HTTP transport ─────────────────────────────────────────────────
 
-sse_transport = SseServerTransport("/messages")
+session_manager = StreamableHTTPSessionManager(app=server)
 
 
-async def sse_endpoint(request: Request) -> Response:
-    # Accept token from query param or Authorization: Bearer header
-    token = request.query_params.get("token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+@contextlib.asynccontextmanager
+async def lifespan(app: Starlette) -> AsyncIterator[None]:
+    async with session_manager.run():
+        logger.info("Streamable HTTP session manager started")
+        yield
+
+
+async def authenticated_mcp_handler(scope: Scope, receive: Receive, send: Send) -> None:
+    """ASGI app that validates Bearer token then delegates to the session manager."""
+    request = Request(scope, receive)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    else:
+        token = None
 
     creds = _decode_token(token) if token else None
     if not creds:
         base = _base_url(request)
-        return Response(
-            "Unauthorized: authenticate via /mcp in Claude Code or run setup-mcp.sh",
+        logger.warning("Returning 401 — no valid Bearer token on %s %s", request.method, request.url.path)
+        response = Response(
+            "Unauthorized",
             status_code=401,
             headers={"WWW-Authenticate": f'Bearer resource_metadata="{base}/.well-known/oauth-protected-resource"'},
         )
+        await response(scope, receive, send)
+        return
 
     client = ZendeskClient(subdomain=creds["subdomain"], email=creds["email"], token=creds["api_key"])
-    logger.info(f"SSE session started for subdomain={creds['subdomain']} email={creds['email']}")
     _current_client.set(client)
-
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
-        await server.run(
-            streams[0],
-            streams[1],
-            InitializationOptions(
-                server_name="Zendesk",
-                server_version="0.1.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
-        )
-
-
-class _SentResponse:
-    """No-op response returned to Starlette after handle_post_message already sent the reply."""
-    async def __call__(self, scope, receive, send) -> None:
-        pass
-
-
-async def messages_endpoint(request: Request) -> Response:
-    await sse_transport.handle_post_message(request.scope, request.receive, request._send)
-    return _SentResponse()
+    logger.info("MCP request authenticated for subdomain=%s email=%s", creds["subdomain"], creds["email"])
+    await session_manager.handle_request(scope, receive, send)
 
 
 starlette_app = Starlette(
@@ -428,10 +418,10 @@ starlette_app = Starlette(
         Route("/token",     endpoint=token_endpoint,     methods=["POST"]),
         # Legacy auth (setup-mcp.sh)
         Route("/auth",     endpoint=auth_endpoint,     methods=["POST"]),
-        # MCP transport
-        Route("/sse",      endpoint=sse_endpoint),
-        Route("/messages", endpoint=messages_endpoint, methods=["POST"]),
-    ]
+        # MCP transport (streamable HTTP)
+        Mount("/mcp", app=authenticated_mcp_handler),
+    ],
+    lifespan=lifespan,
 )
 
 
