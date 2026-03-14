@@ -10,8 +10,8 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "page": {"type": ["integer", "string"], "description": "Page number", "default": 1},
-                "per_page": {"type": ["integer", "string"], "description": "Number of views per page (max 100)", "default": 25},
+                "page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Page number", "default": 1},
+                "per_page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Number of views per page (max 100)", "default": 25},
             },
             "required": [],
         },

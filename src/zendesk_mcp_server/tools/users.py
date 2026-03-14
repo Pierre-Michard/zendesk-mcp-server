@@ -11,8 +11,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "role": {"type": "string", "description": "Filter by role: agent, admin, or end-user"},
-                "page": {"type": ["integer", "string"], "description": "Page number", "default": 1},
-                "per_page": {"type": ["integer", "string"], "description": "Number of users per page (max 100)", "default": 25},
+                "page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Page number", "default": 1},
+                "per_page": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "Number of users per page (max 100)", "default": 25},
             },
             "required": [],
         },

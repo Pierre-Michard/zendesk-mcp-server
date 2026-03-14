@@ -47,7 +47,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "field_id": {"type": ["integer", "string"], "description": "ID of the ticket field to update"},
+                "field_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "ID of the ticket field to update"},
                 "title": {"type": "string", "description": "New display title"},
                 "description": {"type": "string", "description": "New description"},
                 "required": {"type": "boolean", "description": "Whether the field is required"},
@@ -85,7 +85,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "field_id": {"type": ["integer", "string"], "description": "ID of the user field to update"},
+                "field_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "ID of the user field to update"},
                 "title": {"type": "string", "description": "New display title"},
                 "description": {"type": "string", "description": "New description"},
                 "active": {"type": "boolean", "description": "Whether the field is active"},
@@ -122,7 +122,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "field_id": {"type": ["integer", "string"], "description": "ID of the organization field to update"},
+                "field_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "description": "ID of the organization field to update"},
                 "title": {"type": "string", "description": "New display title"},
                 "description": {"type": "string", "description": "New description"},
                 "active": {"type": "boolean", "description": "Whether the field is active"},
