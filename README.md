@@ -15,30 +15,45 @@ This server provides a comprehensive integration with Zendesk. It offers:
 
 ## Authentication
 
-The server uses an HTTP/SSE transport. Zendesk credentials are passed directly as headers when opening the SSE connection — no pre-authentication step or environment variables required.
+The server uses a streamable HTTP transport at `/mcp`. Zendesk credentials are encoded in a Bearer token passed via the `Authorization` header.
 
-### Required headers
+### Generating a token
 
-| Header | Description |
-|---|---|
-| `X-Zendesk-Subdomain` | Your Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`) |
-| `X-Zendesk-Email` | The email address of the Zendesk agent |
-| `X-Zendesk-Token` | The Zendesk API token |
+The token is a base64url-encoded JSON payload containing your Zendesk credentials:
 
-The server validates the credentials against Zendesk on every new SSE connection. Each session gets its own isolated `ZendeskClient`.
+```json
+{"subdomain": "acme", "email": "you@example.com", "api_key": "your-api-token"}
+```
 
-### Claude / MCP client config
+You can generate it with:
+
+```bash
+echo -n '{"subdomain": "acme", "email": "you@example.com", "api_key": "your-api-token"}' | base64
+```
+
+Alternatively, authenticate via `POST /auth` with a JSON body `{"subdomain", "email", "api_key"}` — the server validates against Zendesk and returns a `{"token": "..."}` response.
+
+### OAuth 2.0 flow
+
+The server also exposes a full OAuth 2.0 authorization flow (discovery at `/.well-known/oauth-protected-resource`, `/authorize`, `/token`, `/register`) for clients that support it.
+
+### Claude Code config
+
+```bash
+claude mcp add --transport http zendesk http://localhost:8000/mcp \
+  --header "Authorization: Bearer <your-token>"
+```
+
+Or in `settings.json`:
 
 ```json
 {
   "mcpServers": {
     "zendesk": {
-      "type": "sse",
-      "url": "http://localhost:8000/sse",
+      "type": "http",
+      "url": "http://localhost:8000/mcp",
       "headers": {
-        "X-Zendesk-Subdomain": "your-subdomain",
-        "X-Zendesk-Email": "you@example.com",
-        "X-Zendesk-Token": "your-api-token"
+        "Authorization": "Bearer <your-token>"
       }
     }
   }
@@ -70,13 +85,13 @@ Run it:
 docker run --rm -p 8000:8000 zendesk-mcp-server
 ```
 
-Then authenticate via `POST /auth` as shown above.
+Then connect using Claude Code or any MCP client as shown above.
 
 ## Project Structure
 
 ```
 src/zendesk_mcp_server/
-├── server.py              # HTTP/SSE server, auth endpoint, session management
+├── server.py              # Streamable HTTP server, auth, OAuth, session management
 ├── client/
 │   ├── __init__.py        # Composes all mixins into ZendeskClient
 │   ├── base.py            # Auth setup and shared HTTP helper
